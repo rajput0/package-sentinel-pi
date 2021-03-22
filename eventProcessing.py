@@ -2,6 +2,7 @@
 
 import time
 import sys
+import requests
 
 EMULATE_HX711=False
 
@@ -39,7 +40,7 @@ hx.set_reading_format("MSB", "MSB")
 # and I got numbers around 184000 when I added 2kg. So, according to the rule of thirds:
 # If 2000 grams is 184000 then 1000 grams is 184000 / 2000 = 92.
 #hx.set_reference_unit(113)
-hx.set_reference_unit(referenceUnit)
+hx.set_reference_unit(-26.4655172414)
 
 hx.reset()
 
@@ -63,6 +64,11 @@ while True:
         
         # Prints the weight. Comment if you're debbuging the MSB and LSB issue.
         val = hx.get_weight(5)
+        if val > 10:
+            URL = "http://localhost:55190/api/students"
+            r = requests.get(URL)
+            data = r.json()
+            print(data)
         print(val)
 
         # To get weight from both channels (if you have load cells hooked up 
