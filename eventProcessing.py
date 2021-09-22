@@ -14,6 +14,7 @@ DEVICE_TOKEN = "ex6VPaBdS1O71wNWqJu-St:APA91bFJx5t4kLNyfcqV9nN_TawoDau4ETUPWl3_w
 
 # DAVID's
 #DEVICE_TOKEN = "eZLm6ggkTzqElKhn8vkvmq:APA91bEfXYGqKSVHk07oFmHsictLYxc4XCpENvhIjWtb-c9r87FSouRxzJYxp_qCnI5NJvQUzG4OmeWt4xgIpIlUTxIPE6hD_9wxhzP5XTGWfC3za0GbS2qcX5BGXo3ohpMO6bn5w0IL"
+
 #pin numbers for hx711
 dout = 5
 pd_sck = 6
@@ -39,19 +40,36 @@ def cleanAndExit():
     print("Bye!")
     sys.exit()
     
-def getAccessToken(url, user, password):
-    # token = "access toekn" {get from backend}
-    body={
-        "userName" : user,
-        "password" : password
-    }
-    r = requests.post(url, json=body)
+# def getAccessToken(url, user, password):
+#     # token = "access toekn" {get from backend}
+#     body={
+#         "userName" : user,
+#         "password" : password
+#     }
+#     r = requests.post(url, json=body)
+#     return r.json()['token']
+
+def getserialNumber():
+  # Extract serial from cpuinfo file
+  cpuserial = "0000000000000000"
+  try:
+    f = open('/proc/cpuinfo','r')
+    for line in f:
+      if line[0:6]=='Serial':
+        cpuserial = line[10:26]
+    f.close()
+  except:
+    cpuserial = "0000000000000000"
+    print("ERROR OCCURED WHILE FETHCING SERIAL NUMBER...")
+  return cpuserial
+
+def getAccessToken(url):
+    r = requests.post(url)
+    # getting token from success response
     return r.json()['token']
 
 def sendNotification(url):
-
-     # headers={'Authorization':"bearer "+ token}
-    token = getAccessToken("http://csr.fast.sheridanc.on.ca:50271/api/Authenticate/Login", "admin", "admin")
+    token = getAccessToken("http://csr.fast.sheridanc.on.ca:50271/api/Authenticate/AuthenticateDevice?serialNumber=" + getserialNumber())
     headers = {'Authorization':"bearer "+ token}
     
     r = requests.post(url, headers = headers)
@@ -66,7 +84,7 @@ def analyze(arr):
 def sync():
     threading.Timer(15.0,sync).start()
     
-    token = getAccessToken("http://csr.fast.sheridanc.on.ca:50271/api/Authenticate/Login", "admin", "admin")
+    token = getAccessToken("http://csr.fast.sheridanc.on.ca:50271/api/Authenticate/AuthenticateDevice?serialNumber=" + getserialNumber())
     headers = {'Authorization':"Bearer "+ token}
     url = "http://csr.fast.sheridanc.on.ca:50271/api/Devices/Sync"
     
