@@ -57,10 +57,11 @@ def getserialNumber():
     for line in f:
       if line[0:6]=='Serial':
         cpuserial = line[10:26]
+        print("CPU SERIAL: " + cpuserial)
     f.close()
   except:
-    cpuserial = "0000000000000000"
-    print("ERROR OCCURED WHILE FETHCING SERIAL NUMBER...")
+    if (cpuserial == "0000000000000000"):
+        print("ERROR OCCURED WHILE FETHCING SERIAL NUMBER...")
   return cpuserial
 
 def getAccessToken(url):
