@@ -4,24 +4,22 @@ import time
 import sys
 import requests
 import threading
+import vlc
+
 
 EMULATE_HX711=False
 WEIGHT_NEGLEGANCE = 10
 ANALYZE_NEGLEGANCE = 10
 REFERENCE_UNIT = -26.4655172414
-# DEEP's 
-DEVICE_TOKEN = "ex6VPaBdS1O71wNWqJu-St:APA91bFJx5t4kLNyfcqV9nN_TawoDau4ETUPWl3_wYJBpv-8dyG9cc8nYHP16WO6cwoa1LxNX7DM_prAgNg9fDdpjxgClCFrvPtuMpaAaCJ2NeCnUIBS9_Fb12xHylalMNb1maxI5Ifh"
-
-# DAVID's
-#DEVICE_TOKEN = "eZLm6ggkTzqElKhn8vkvmq:APA91bEfXYGqKSVHk07oFmHsictLYxc4XCpENvhIjWtb-c9r87FSouRxzJYxp_qCnI5NJvQUzG4OmeWt4xgIpIlUTxIPE6hD_9wxhzP5XTGWfC3za0GbS2qcX5BGXo3ohpMO6bn5w0IL"
 
 #pin numbers for hx711
-dout = 5
+dout = 5 
 pd_sck = 6
 
-global currentWeight
 global buffer_values
 global confidence
+global currentWeight 
+
 
 buffer_values = []
 
@@ -39,15 +37,7 @@ def cleanAndExit():
         
     print("Bye!")
     sys.exit()
-    
-# def getAccessToken(url, user, password):
-#     # token = "access toekn" {get from backend}
-#     body={
-#         "userName" : user,
-#         "password" : password
-#     }
-#     r = requests.post(url, json=body)
-#     return r.json()['token']
+
 
 def getserialNumber():
   # Extract serial from cpuinfo file
@@ -57,7 +47,6 @@ def getserialNumber():
     for line in f:
       if line[0:6]=='Serial':
         cpuserial = line[10:26]
-        print("CPU SERIAL: " + cpuserial)
     f.close()
   except:
     if (cpuserial == "0000000000000000"):
@@ -76,38 +65,79 @@ def sendNotification(url):
     r = requests.post(url, headers = headers)
     
     print(r.status_code)
-
+    return r 
+    
 def analyze(arr):
+    print(arr)
     if max(arr)- min(arr) < ANALYZE_NEGLEGANCE:
         return True
     return False
+
+def loadAlarmSound():
+    alarm.audio_set_volume(0)
+    alarm.play()
+    alarm.set_pause(1)
+
+def dismissAlarmCheck():
+    global currentWeight,hx
+    threading.Timer(1.0,dismissAlarmCheck).start()
+    
+    if(alarm.is_playing()):
+        token = getAccessToken("http://csr.fast.sheridanc.on.ca:50271/api/Authenticate/AuthenticateDevice?serialNumber=" + getserialNumber())
+        headers = {'Authorization':"Bearer "+ token}
+        url = "http://csr.fast.sheridanc.on.ca:50271/api/Device/isAllPackagesAcknowledged"
+        
+        r = requests.post(url, headers = headers)
+        
+        allAcknowledged = r.json()['allAcknowledged']
+        print("allacknowledged",
+              allAcknowledged, alarm.is_playing())
+        if(allAcknowledged):
+           alarm.stop()
+           loadAlarmSound()
+           weightProcessing(hx,currentWeight)
+           
 
 def sync():
     threading.Timer(15.0,sync).start()
     
     token = getAccessToken("http://csr.fast.sheridanc.on.ca:50271/api/Authenticate/AuthenticateDevice?serialNumber=" + getserialNumber())
     headers = {'Authorization':"Bearer "+ token}
-    url = "http://csr.fast.sheridanc.on.ca:50271/api/Devices/Sync"
+    url = "http://csr.fast.sheridanc.on.ca:50271/api/Device/Sync"
     
     r = requests.post(url,headers = headers)
 
-def weightProcessing(hx):
-    currentWeight = 0
-    while True:
+def weightProcessing(hx,weight):
+    global currentWeight
+    global isAlarmPlaying
+    currentWeight = weight
+    while not alarm.is_playing():
         try:
-            val = hx.get_weight(5)
-            print("{:.2f}".format(val) , "{:.2f}".format(currentWeight))
-            
+            if(len(buffer_values) <= 4):
+                val = hx.get_weight(1)
+                if(val < 0):
+                    val = 0
+                print("{:.2f}".format(val) , "{:.2f}".format(currentWeight))
+
             if(len(buffer_values) == 5):
                 confidence = analyze(buffer_values)
-                
+                print(confidence,val)
                 if confidence and val > currentWeight + WEIGHT_NEGLEGANCE:
-                    sendNotification("http://csr.fast.sheridanc.on.ca:50271/api/Devices/PackagePlaced")
+                    sendNotification("http://csr.fast.sheridanc.on.ca:50271/api/Device/PackagePlaced")
                     currentWeight = sum(buffer_values) / len(buffer_values)
                 elif confidence and val < currentWeight - WEIGHT_NEGLEGANCE:
                     #alarmCheck()
-                    sendNotification("http://csr.fast.sheridanc.on.ca:50271/api/Devices/PackagePickedUp")
+                    r = sendNotification("http://csr.fast.sheridanc.on.ca:50271/api/Device/PackagePickedUp")
                     currentWeight = val
+                    
+                    triggerAlarm = r.json()['trriggerAlarm']
+                    if triggerAlarm:
+                        print("Start playing")
+                        alarm.audio_set_volume(200)
+                        alarm.play()
+                    elif not triggerAlarm:
+                        alarm.stop()
+                        loadAlarmSound()
                 hx.power_down()
                 hx.power_up()
                 time.sleep(0.1)
@@ -115,18 +145,25 @@ def weightProcessing(hx):
                     
             else:
                 buffer_values.append(val)
-                #print(len(buffer_values))
 
         except (KeyboardInterrupt, SystemExit):
             cleanAndExit()
 
+#setting up alarm
+alarm = vlc.MediaPlayer()
+media = vlc.Media("alarm-sound.mp3")
+alarm.set_media(media)
+loadAlarmSound()
 
+GPIO.cleanup()
 hx = HX711(dout, pd_sck)
 hx.set_reading_format("MSB", "MSB")
 hx.set_reference_unit(REFERENCE_UNIT)
 hx.reset()
 hx.tare()
-sync()
 
-print("Tare done! Add weight now...")
-weightProcessing(hx)
+
+
+sync()
+dismissAlarmCheck()
+weightProcessing(hx,0)
